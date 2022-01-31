@@ -1,19 +1,29 @@
 const rp = require('request-promise');
-const path = require('path');
 const cheerio = require('cheerio');
+const dotenv = require('dotenv').config();
 const express = require('express');
-const nodeMailer = require('nodemailer');
-const { urlencoded } = require('body-parser');
+const nodemailer = require('nodemailer');
 const CronJob = require("cron").CronJob;
 const app = express();
 
 
 let currentPrice = 0;
-const PROD_URL = "https://www.amazon.in/Napa-Hide-Protected-Genuine-Quality/dp/B083TG9VFK/ref=zg-bs_luggage_1/258-8867239-4296335?pd_rd_w=W51mt&pf_rd_p=56cde3ad-3235-46d2-8a20-4773248e8b83&pf_rd_r=S9ACMDNQ7AYZKH8G905X&pd_rd_r=73e9d122-abae-468d-b0c2-ab23829313ac&pd_rd_wg=y8AbD&pd_rd_i=B08TS5X9WM&th=1";
+const PROD_URL = "https://www.amazon.in/Tide-Extra-Detergent-Washing-Powder/dp/B07ZQDFG9R?ref_=Oct_DLandingS_D_1713f719_60&smid=AT95IG9ONZD7S&th=1";
+let newPrice = 0;
 
-
-const job = new CronJob('* * * * * * ', function() {
+const job = new CronJob('*/5 * * * *', function() {
+    console.log("running");
     getPrice().then((newPrice,rej)=>{
+        if(rej){
+            getPrice();
+        }
+        if(currentPrice == 0){
+            currentPrice = newPrice
+        }
+        if(currentPrice != newPrice){
+            main()
+            console.log(newPrice);
+    }
         
     })
 }, true);
@@ -24,12 +34,12 @@ function getPrice(){
     return new Promise((resolve , rejects)=>{
         
         rp(PROD_URL).then((res)=>{
-
             const $ = cheerio.load(res);
-            currentPrice =    $('.apexPriceToPay > span:nth-child(1)').text().substring(1) ||  $('#corePrice_feature_div > div:nth-child(1) > span:nth-child(1) > span:nth-child(1)').text().substring(1) || $('#corePrice_feature_div > div:nth-child(1) > span:nth-child(2) > span:nth-child(2) > span:nth-child(2)').text().slice(0,-1);
-            currentPrice = parseFloat(currentPrice.replace(/,/g, ''))
-            if(currentPrice != undefined){
-                resolve(currentPrice);
+            newPrice =    $('.apexPriceToPay > span:nth-child(1)').text().substring(1) ||  $('#corePrice_feature_div > div:nth-child(1) > span:nth-child(1) > span:nth-child(1)').text().substring(1) || $('#corePrice_feature_div > div:nth-child(1) > span:nth-child(2) > span:nth-child(2) > span:nth-child(2)').text().slice(0,-1);
+            newPrice = parseFloat(newPrice.replace(/,/g, ''))
+            if(newPrice != undefined){
+                
+                resolve(newPrice);
             }
             rejects("Data unavailable")
             
@@ -37,5 +47,28 @@ function getPrice(){
     }
     )
 }
+
+async function main() {
+  
+    let transporter = nodemailer.createTransport({
+        service : "Gmail", // true for 465, false for other ports
+      auth: {
+        user : process.env.USER_MAIL, 
+        pass : process.env.PASS,
+      },
+    });
+  
+    // send mail with defined transport object
+    let info = await transporter.sendMail({
+      from: '"Amazon price tracker" ourMail@gmail.com', // sender address
+      to: process.env.TO_MAIL , // list of receivers
+      subject: "Amazon price tracker", // Subject line
+      text: ``, // plain text body
+      html: `<b>The price of item ${PROD_URL} has dropped to ${newPrice}.</b>`, // html body
+    });
+  
+    console.log("Message sent: %s", info.messageId);
+  
+  }
 
 app.listen(3000)
